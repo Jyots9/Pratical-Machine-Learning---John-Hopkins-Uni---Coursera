@@ -1,0 +1,117 @@
+---
+title: "Project"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+#load the libraries
+library(rattle)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
+
+#download data
+# training set
+download.file(
+     "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+    destfile = "pml-training.csv",
+    method = "libcurl" )
+
+#test set
+download.file(
+     "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+     destfile = "pml-testing.csv",
+     method = "libcurl")
+
+library(caret)
+training <- read.csv("pml-training.csv",na.strings = c("NA", "", "#DIV/0!"))
+testing <- read.csv("pml-testing.csv",na.strings = c("NA", "", "#DIV/0!"))
+
+# Near-zero variance predictors
+NZV <- nearZeroVar(training, saveMetrics = TRUE)
+
+# Remove columns with many NAs
+naCols <- colSums(is.na(training)) > 0.95 * nrow(training)
+training_clean <- training[, !naCols]
+testing_clean  <- testing[, !naCols]
+
+# Remove NZV columns
+nzvCols <- nearZeroVar(training_clean)
+training_clean <- training_clean[, -nzvCols]
+testing_clean  <- testing_clean[, -nzvCols]
+regex <- grepl("^X|timestamp|user_name", names(training_clean))
+training_reg <- training_clean[, !regex]
+testing_reg <- testing_clean[, !regex]
+
+cond <- (colSums(is.na(training_reg)) == 0)
+training_cond <- training_reg[, cond]
+testing_cond <- testing_reg[, cond]
+
+corrplot(cor(training_cond[, -length(names(training_cond))]), method = "color", tl.cex = 0.5)
+
+inTrain <- createDataPartition(training_cond$classe, p = 0.70, list = FALSE)
+validation <- training[-inTrain, ]
+training <- training[inTrain, ]
+rm(inTrain)
+
+table(validation$classe)
+
+class(validation$classe)
+
+levels(validation$classe)
+
+validation$classe <- factor( validation$classe,levels = c("A", "B", "C", "D", "E"))
+
+modelTree <- rpart(classe ~ ., data = training, method = "class")
+prp(modelTree)
+predictTree <- predict(modelTree, validation, type = "class")
+table(predictTree)
+
+cm <- confusionMatrix(predictTree,validation$classe)
+
+accuracy <- postResample(predictTree, validation$classe)
+ose <- 1 - as.numeric(confusionMatrix(validation$classe, predictTree)$overall[1])
+rm(predictTree)
+rm(modelTree)
+training <- training[, colSums(is.na(training)) == 0]
+testing  <- testing[, colSums(is.na(testing)) == 0]
+anyNA(training)
+
+modelRF <- train(classe ~ ., data = training, method = "rf", trControl = trainControl(method = "cv", 5), ntree = 250)
+modelRF
+
+predictRF <- predict(modelRF, validation)
+confusionMatrix(validation$classe, predictRF)
+
+accuracy <- postResample(predictRF, validation$classe)
+ose <- 1 - as.numeric(confusionMatrix(validation$classe, predictRF)$overall[1])
+rm(predictRF)
+rm(accuracy)
+rm(ose)
+predict(modelRF, testing[, -length(names(testing))])
